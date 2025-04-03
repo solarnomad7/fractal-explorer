@@ -28,7 +28,7 @@ FetchContent_Declare(imgui-sfml
 	GIT_TAG 2.6.x)
 FetchContent_MakeAvailable(imgui-sfml)
 
-add_executable(mandelbrot src/Set.h src/MandelbrotSet.h src/Set.cpp src/MandelbrotSet.cpp src/main.cpp)
+add_executable(mandelbrot src/Set.h src/MandelbrotSet.h src/JuliaSet.h src/Set.cpp src/MandelbrotSet.cpp src/JuliaSet.cpp src/main.cpp)
 target_link_libraries(mandelbrot PRIVATE sfml-graphics)
 target_link_libraries(mandelbrot PUBLIC ImGui-SFML::ImGui-SFML)
 target_link_libraries(mandelbrot PUBLIC ${LUA_LIBRARIES})

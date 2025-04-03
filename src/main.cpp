@@ -3,6 +3,7 @@
 #include "imgui-SFML.h"
 
 #include "MandelbrotSet.h"
+#include "JuliaSet.h"
 
 #include <SFML/Window.hpp>
 
@@ -18,13 +19,33 @@ std::string doubleToString(double num, int precision) {
 	return str.str();
 }
 
+enum SetType {
+	Mandelbrot,
+	Julia
+};
+
+void changeSet(int setType, int iterations, int width, int height, lua_State* lua, std::shared_ptr<Set> &set) {
+	switch (setType) {
+		case SetType::Mandelbrot:
+			set = std::make_unique<MandelbrotSet>(iterations, width, height, lua);
+			break;
+		case SetType::Julia:
+			set = std::make_unique<JuliaSet>(iterations, width, height, lua);
+			break;
+	}
+}
+
 int main()
 {
 	const int screenWidth = 1920;
 	const int screenHeight = 1080;
 
+	const double defaultReal = -0.8;
+	const double defaultImaginary = 0.2;
+
 	const float zoomMultiplier = 0.8;
 	const int panAmount = 50;
+	const int defaultIterations = 100;
 
 	const char* defaultScriptFile = "scripts/default.lua";
 
@@ -38,13 +59,16 @@ int main()
 	sf::RenderWindow window(sf::VideoMode(screenWidth, screenHeight), "Mandelbrot Visualizer", sf::Style::Titlebar | sf::Style::Close);
 	ImGui::SFML::Init(window);
 
-	MandelbrotSet mandelbrot(100, screenWidth, screenHeight, lua);
-	mandelbrot.setImageSize(screenWidth, screenHeight);
+	static int chosenSet = SetType::Mandelbrot;
+	int currentSetType = SetType::Mandelbrot;
+	std::shared_ptr<Set> set = std::make_unique<MandelbrotSet>(defaultIterations, screenWidth, screenHeight, lua);
 
 	// Stores current values of input boxes
-	int setMaxIter = mandelbrot.getMaxIterations();
+	int setMaxIter = set->getMaxIterations();
 	int setWidth = screenWidth;
 	int setHeight = screenHeight;
+	double setReal = defaultReal;
+	double setImaginary = defaultImaginary;
 
 	// Load default coloring script
 	std::ifstream ifs(defaultScriptFile);
@@ -66,31 +90,31 @@ int main()
 				bool regen = false;
 				switch (event.key.code) {
 					case sf::Keyboard::Add: // Zoom in
-						mandelbrot.zoomVal *= zoomMultiplier;
+						set->zoomVal *= zoomMultiplier;
 						regen = true;
 						break;
 					case sf::Keyboard::Subtract: // Zoom out
-						mandelbrot.zoomVal /= zoomMultiplier;
+					set->zoomVal /= zoomMultiplier;
 						regen = true;
 						break;
 					case sf::Keyboard::Up:
 					case sf::Keyboard::W:
-						mandelbrot.yOffset -= panAmount * mandelbrot.zoomVal;
+						set->yOffset -= panAmount * set->zoomVal;
 						regen = true;
 						break;
 					case sf::Keyboard::Down:
 					case sf::Keyboard::S:
-						mandelbrot.yOffset += panAmount * mandelbrot.zoomVal;
+						set->yOffset += panAmount * set->zoomVal;
 						regen = true;
 						break;
 					case sf::Keyboard::Left:
 					case sf::Keyboard::A:
-						mandelbrot.xOffset -= panAmount * mandelbrot.zoomVal;
+						set->xOffset -= panAmount * set->zoomVal;
 						regen = true;
 						break;
 					case sf::Keyboard::Right:
 					case sf::Keyboard::D:
-						mandelbrot.xOffset += panAmount * mandelbrot.zoomVal;
+						set->xOffset += panAmount * set->zoomVal;
 						regen = true;
 						break;
 					case sf::Keyboard::Tab:
@@ -102,7 +126,7 @@ int main()
 						break;
 				}
 				if (regen) {
-					mandelbrot.generateSet();
+					set->generateSet();
 				}
 			}
 		}
@@ -112,17 +136,28 @@ int main()
 		if (drawUi) {
 			ImGui::Begin("Zoom");
 			if (ImGui::Button("Zoom in")) {
-				mandelbrot.zoomVal *= zoomMultiplier;
-				mandelbrot.generateSet();
+				set->zoomVal *= zoomMultiplier;
+				set->generateSet();
 			}
 			if (ImGui::Button("Zoom out")) {
-				mandelbrot.zoomVal /= zoomMultiplier;
-				mandelbrot.generateSet();
+				set->zoomVal /= zoomMultiplier;
+				set->generateSet();
 			}
 			ImGui::End();
 
 			ImGui::Begin("Options");
 			if (ImGui::TreeNode("Render")) {
+				ImGui::RadioButton("Mandelbrot", &chosenSet, SetType::Mandelbrot); ImGui::SameLine();
+				ImGui::RadioButton("Julia", &chosenSet, SetType::Julia);
+
+				// Check if a new fractal type was chosen
+				if (chosenSet != currentSetType) {
+					currentSetType = chosenSet;
+					changeSet(chosenSet, defaultIterations, screenWidth, screenHeight, lua, set);
+					setReal = defaultReal;
+					setImaginary = defaultImaginary;
+				}
+
 				if (ImGui::InputInt("Iterations", &setMaxIter, 10)) {
 					if (setMaxIter < 0) {
 						setMaxIter = 0;
@@ -131,15 +166,27 @@ int main()
 					}
 				}
 				if (ImGui::Button("Set")) {
-					mandelbrot.setMaxIterations(setMaxIter);
-					mandelbrot.generateSet();
+					set->setMaxIterations(setMaxIter);
+					set->generateSet();
 				}
 				ImGui::SameLine();
 				if (ImGui::Button("Preview")) {
-					int temp = mandelbrot.getMaxIterations();
-					mandelbrot.setMaxIterations(setMaxIter);
-					mandelbrot.generateSet();
-					mandelbrot.setMaxIterations(temp);
+					int temp = set->getMaxIterations();
+					set->setMaxIterations(setMaxIter);
+					set->generateSet();
+					set->setMaxIterations(temp);
+				}
+
+				if (currentSetType == SetType::Julia) {
+					ImGui::InputDouble("Real", &setReal, 0.01);
+					ImGui::InputDouble("Imaginary", &setImaginary, 0.01);
+					if (ImGui::Button("Set parameters")) {
+						// The Julia option is selected so we can safely cast the pointer
+						auto julia = std::dynamic_pointer_cast<JuliaSet>(set);
+						julia->cx = setReal;
+						julia->cy = setImaginary;
+						set->generateSet();
+					}
 				}
 				ImGui::TreePop();
 			}
@@ -149,8 +196,8 @@ int main()
 				textEditActive = ImGui::IsItemActive();
 				if (ImGui::Button("Update")) {
 					luaL_loadstring(lua, colorScript.data());
-					mandelbrot.setLuaState(lua);
-					mandelbrot.generateSet();
+					set->setLuaState(lua);
+					set->generateSet();
 				}
 				ImGui::TreePop();
 			}
@@ -158,7 +205,7 @@ int main()
 			ImGui::End();
 
 			ImGui::Begin("Info");
-			double zoomPercentage = 0.003 / mandelbrot.zoomVal;
+			double zoomPercentage = 0.003 / set->zoomVal;
 			std::string zoomValStr = "Zoom: ";
 			if (zoomPercentage > 100000) {
 				// Format using scientific notation
@@ -174,20 +221,20 @@ int main()
 			}
 			ImGui::Text(zoomValStr.c_str());
 
-			std::string xOffStr = "X offset: " + doubleToString(mandelbrot.xOffset, 12);
+			std::string xOffStr = "X offset: " + doubleToString(set->xOffset, 12);
 			ImGui::Text(xOffStr.c_str());
 
-			std::string yOffStr = "Y offset: " + doubleToString(mandelbrot.yOffset, 12);
+			std::string yOffStr = "Y offset: " + doubleToString(set->yOffset, 12);
 			ImGui::Text(yOffStr.c_str());
 
-			std::string timeStr = "Render time: " + std::to_string(mandelbrot.latestGenTime) + " ms";
+			std::string timeStr = "Render time: " + std::to_string(set->latestGenTime) + " ms";
 			ImGui::Text(timeStr.c_str());
 			ImGui::End();
 
 		}
 
 		window.clear();
-		window.draw(mandelbrot.getSet());
+		window.draw(set->getSet());
 		ImGui::SFML::Render(window);
 		window.display();
 	}

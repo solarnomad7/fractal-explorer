@@ -1,4 +1,8 @@
+/.vscode
 /build
+/CMakeFiles
 *.un~
 *.cpp~
 *.h~
+*.txt
+!CMakeLists.txt
